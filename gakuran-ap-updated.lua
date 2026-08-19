@@ -2779,24 +2779,29 @@ local TimingDiag_Section = Blatant_Tab:Section("Timing", "Right")]])if not _x th
     BlatantFaceTask()
     EvaluateParryTriggers()]])if not _x then print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,115,116,97,114,116,117,112,32,102,97,105,108,101,100,58,32,109,97,105,110,45,108,111,111,112,32,83,110,97,112,32,76,111,99,107,32,109,97,114,107,101,114,32,99,104,97,110,103,101,100))return end do local _la=[[-- 5. Files Section
 local function CreateFilesSection()]]local _ma=[==[
-local GAKURAN_SHARED_CONFIG_FILE =
-    "gakuran_shared_config.lua"
+_G.__GakuranSharedConfigManager =
+    _G.__GakuranSharedConfigManager
+    or {
+        Format = "GakuranTimingConfig",
+        Version = 2,
+        Folder = "GakuranConfigs",
+        Selected = "Basic",
+        PendingName = "MyConfig",
+        BasicTimings = nil,
+        Dropdown = nil,
+        NameBox = nil,
+    }
 
-local GakuranSharedConfig = {
-    Format = "GakuranTimingConfig",
-    Version = 1,
-    BasicTimings = nil,
-}
+function _G.__GakuranSharedConfigManager.Notify(title, message)
+    local ok =
+        pcall(function()
+            UI_Library:Notify(
+                tostring(title or "Config"),
+                tostring(message or "")
+            )
+        end)
 
-local function GakuranConfigNotify(title, message)
-    local notified = pcall(function()
-        UI_Library:Notify(
-            tostring(title or "Config"),
-            tostring(message or "")
-        )
-    end)
-
-    if not notified then
+    if not ok then
         print(
             "[Gakuran Config] "
                 .. tostring(title or "Config")
@@ -2806,7 +2811,7 @@ local function GakuranConfigNotify(title, message)
     end
 end
 
-local function GakuranSortedAnimationIds()
+function _G.__GakuranSharedConfigManager.SortedAnimationIds()
     local ids = {}
 
     for animationId, info in pairs(GameConfig or {}) do
@@ -2822,15 +2827,16 @@ local function GakuranSortedAnimationIds()
     end
 
     table.sort(ids)
-
     return ids
 end
 
-local function GakuranCaptureTimings()
+function _G.__GakuranSharedConfigManager.CaptureTimings()
     local timings = {}
 
     for _, animationId
-        in ipairs(GakuranSortedAnimationIds()) do
+        in ipairs(
+            _G.__GakuranSharedConfigManager.SortedAnimationIds()
+        ) do
 
         local info =
             GameConfig[animationId]
@@ -2853,19 +2859,19 @@ local function GakuranCaptureTimings()
     return timings
 end
 
-function GakuranSharedConfig.CaptureBasic()
-    if GakuranSharedConfig.BasicTimings then
+function _G.__GakuranSharedConfigManager.CaptureBasic()
+    if _G.__GakuranSharedConfigManager.BasicTimings then
         return
     end
 
-    GakuranSharedConfig.BasicTimings =
-        GakuranCaptureTimings()
+    _G.__GakuranSharedConfigManager.BasicTimings =
+        _G.__GakuranSharedConfigManager.CaptureTimings()
 
     _G.__GakuranBasicTimingConfig =
-        GakuranSharedConfig.BasicTimings
+        _G.__GakuranSharedConfigManager.BasicTimings
 end
 
-function GakuranSharedConfig.ClearLearnedOffsets()
+function _G.__GakuranSharedConfigManager.ClearLearnedOffsets()
     if AdaptiveTiming
         and type(AdaptiveTiming.Learned) == "table" then
 
@@ -2875,9 +2881,9 @@ function GakuranSharedConfig.ClearLearnedOffsets()
     end
 end
 
-function GakuranSharedConfig.Apply(config, sourceName)
+function _G.__GakuranSharedConfigManager.Apply(config, sourceName)
     if type(config) ~= "table" then
-        GakuranConfigNotify(
+        _G.__GakuranSharedConfigManager.Notify(
             "Config Error",
             "Config is not a table."
         )
@@ -2890,7 +2896,7 @@ function GakuranSharedConfig.Apply(config, sourceName)
         or config
 
     if type(timings) ~= "table" then
-        GakuranConfigNotify(
+        _G.__GakuranSharedConfigManager.Notify(
             "Config Error",
             "No Timings table found."
         )
@@ -2942,15 +2948,17 @@ function GakuranSharedConfig.Apply(config, sourceName)
         end
     end
 
-    -- Learned offsets belong to the previous timing set.
-    -- Do not let them silently alter a freshly loaded shared config.
-    GakuranSharedConfig.ClearLearnedOffsets()
+    _G.__GakuranSharedConfigManager.ClearLearnedOffsets()
 
-    GakuranConfigNotify(
+    _G.__GakuranSharedConfigManager.Notify(
         "Timing Config",
         string.format(
             "Loaded %s | %d applied, %d skipped",
-            tostring(sourceName or config.Name or "shared config"),
+            tostring(
+                sourceName
+                or config.Name
+                or "shared config"
+            ),
             applied,
             skipped
         )
@@ -2959,38 +2967,202 @@ function GakuranSharedConfig.Apply(config, sourceName)
     return applied > 0
 end
 
-local function GakuranConfigCommentSafe(value)
-    value =
-        tostring(value or "Unknown")
+function _G.__GakuranSharedConfigManager.SanitizeName(value)
+    local name =
+        tostring(value or "")
 
-    value =
+    name =
         string.gsub(
-            value,
-            "[\r\n]",
+            name,
+            "^%s+",
+            ""
+        )
+
+    name =
+        string.gsub(
+            name,
+            "%s+$",
+            ""
+        )
+
+    name =
+        string.gsub(
+            name,
+            "[^%w%s%-%_]",
+            "_"
+        )
+
+    name =
+        string.gsub(
+            name,
+            "%s+",
             " "
         )
 
-    return value
+    if name == ""
+        or string.lower(name) == "basic" then
+
+        name = "Custom"
+    end
+
+    if #name > 48 then
+        name =
+            string.sub(
+                name,
+                1,
+                48
+            )
+    end
+
+    return name
 end
 
-function GakuranSharedConfig.SerializeCurrent()
+function _G.__GakuranSharedConfigManager.EnsureFolder()
+    if type(isfolder) == "function" then
+        local ok, exists =
+            pcall(
+                isfolder,
+                _G.__GakuranSharedConfigManager.Folder
+            )
+
+        if ok and exists then
+            return true
+        end
+    end
+
+    if type(makefolder) == "function" then
+        local ok =
+            pcall(
+                makefolder,
+                _G.__GakuranSharedConfigManager.Folder
+            )
+
+        if ok then
+            return true
+        end
+    end
+
+    -- Some executors create the folder implicitly after the first write.
+    -- Return true when writefile exists so SaveNamed can still try.
+    return type(writefile) == "function"
+end
+
+function _G.__GakuranSharedConfigManager.PathForName(value)
+    local name =
+        _G.__GakuranSharedConfigManager.SanitizeName(
+            value
+        )
+
+    return
+        _G.__GakuranSharedConfigManager.Folder
+        .. "/"
+        .. name
+        .. ".lua"
+end
+
+function _G.__GakuranSharedConfigManager.ScanConfigNames()
+    _G.__GakuranSharedConfigManager.EnsureFolder()
+
+    local result = {
+        "Basic",
+    }
+
+    local seen = {
+        Basic = true,
+    }
+
+    if type(listfiles) ~= "function" then
+        return result
+    end
+
+    local ok, files =
+        pcall(
+            listfiles,
+            _G.__GakuranSharedConfigManager.Folder
+        )
+
+    if not ok
+        or type(files) ~= "table" then
+
+        return result
+    end
+
+    local custom = {}
+
+    for _, path in ipairs(files) do
+        path =
+            tostring(path or "")
+
+        path =
+            string.gsub(
+                path,
+                "\\",
+                "/"
+            )
+
+        local name =
+            string.match(
+                path,
+                "([^/]+)%.lua$"
+            )
+
+        if name
+            and name ~= ""
+            and not seen[name] then
+
+            seen[name] = true
+            custom[#custom + 1] =
+                name
+        end
+    end
+
+    table.sort(
+        custom,
+        function(a, b)
+            return string.lower(a)
+                < string.lower(b)
+        end
+    )
+
+    for _, name in ipairs(custom) do
+        result[#result + 1] =
+            name
+    end
+
+    return result
+end
+
+function _G.__GakuranSharedConfigManager.SerializeCurrent(configName)
+    local safeName =
+        _G.__GakuranSharedConfigManager.SanitizeName(
+            configName
+            or "Custom"
+        )
+
     local lines = {
         "-- Gakuran shareable timing config",
-        "-- Paste this above the public loader OR save it as:",
-        "-- " .. GAKURAN_SHARED_CONFIG_FILE,
+        "-- Put this file inside the GakuranConfigs folder.",
+        "-- The public script will automatically show it in the Config dropdown.",
         "",
-        "_G.GAKURAN_SHARED_CONFIG = {",
+        "return {",
         '    Format = "GakuranTimingConfig",',
-        "    Version = 1,",
-        '    Name = "Custom",',
+        "    Version = 2,",
+        "    Name = "
+            .. string.format(
+                "%q",
+                safeName
+            )
+            .. ",",
         "    Timings = {",
     }
 
     local current =
-        GakuranCaptureTimings()
+        _G.__GakuranSharedConfigManager.CaptureTimings()
 
     for _, animationId
-        in ipairs(GakuranSortedAnimationIds()) do
+        in ipairs(
+            _G.__GakuranSharedConfigManager.SortedAnimationIds()
+        ) do
 
         local reaction =
             current[animationId]
@@ -3001,13 +3173,29 @@ function GakuranSharedConfig.SerializeCurrent()
                 or {}
 
             local style =
-                GakuranConfigCommentSafe(
+                tostring(
                     info.Style
+                    or "Unknown"
                 )
 
             local display =
-                GakuranConfigCommentSafe(
+                tostring(
                     info.DisplayName
+                    or "Unknown"
+                )
+
+            style =
+                string.gsub(
+                    style,
+                    "[\r\n]",
+                    " "
+                )
+
+            display =
+                string.gsub(
+                    display,
+                    "[\r\n]",
+                    " "
                 )
 
             lines[#lines + 1] =
@@ -3033,92 +3221,11 @@ function GakuranSharedConfig.SerializeCurrent()
     )
 end
 
-function GakuranSharedConfig.Export()
-    local source =
-        GakuranSharedConfig.SerializeCurrent()
-
-    local copied = false
-    local written = false
-
-    if type(setclipboard) == "function" then
-        copied =
-            pcall(
-                setclipboard,
-                source
-            )
-    end
-
-    if type(writefile) == "function" then
-        written =
-            pcall(
-                writefile,
-                GAKURAN_SHARED_CONFIG_FILE,
-                source
-            )
-    end
-
-    if copied and written then
-        GakuranConfigNotify(
-            "Timing Config",
-            "Copied + saved gakuran_shared_config.lua"
-        )
-    elseif copied then
-        GakuranConfigNotify(
-            "Timing Config",
-            "Copied config to clipboard."
-        )
-    elseif written then
-        GakuranConfigNotify(
-            "Timing Config",
-            "Saved gakuran_shared_config.lua"
-        )
-    else
-        GakuranConfigNotify(
-            "Timing Config",
-            "Clipboard/writefile unavailable."
-        )
-    end
-
-    return source
-end
-
-function GakuranSharedConfig.LoadFile()
-    if type(isfile) ~= "function"
-        or type(readfile) ~= "function" then
-
-        GakuranConfigNotify(
+function _G.__GakuranSharedConfigManager.LoadSource(source, sourceName)
+    if type(source) ~= "string" then
+        _G.__GakuranSharedConfigManager.Notify(
             "Config Error",
-            "readfile/isfile unavailable."
-        )
-        return false
-    end
-
-    local existsOk, exists =
-        pcall(
-            isfile,
-            GAKURAN_SHARED_CONFIG_FILE
-        )
-
-    if not existsOk or not exists then
-        GakuranConfigNotify(
-            "Config Error",
-            "Put gakuran_shared_config.lua in the executor workspace first."
-        )
-        return false
-    end
-
-    local readOk, source =
-        pcall(
-            readfile,
-            GAKURAN_SHARED_CONFIG_FILE
-        )
-
-    if not readOk
-        or type(source) ~= "string" then
-
-        GakuranConfigNotify(
-            "Config Error",
-            "Could not read shared config."
+            "Config source is invalid."
         )
         return false
     end
@@ -3127,7 +3234,7 @@ function GakuranSharedConfig.LoadFile()
         loadstring(source)
 
     if not chunk then
-        GakuranConfigNotify(
+        _G.__GakuranSharedConfigManager.Notify(
             "Config Error",
             "Config compile failed: "
                 .. tostring(compileError)
@@ -3135,11 +3242,26 @@ function GakuranSharedConfig.LoadFile()
         return false
     end
 
+    local previous =
+        rawget(
+            _G,
+            "GAKURAN_SHARED_CONFIG"
+        )
+
     local runOk, returned =
         pcall(chunk)
 
+    local legacy =
+        rawget(
+            _G,
+            "GAKURAN_SHARED_CONFIG"
+        )
+
+    _G.GAKURAN_SHARED_CONFIG =
+        previous
+
     if not runOk then
-        GakuranConfigNotify(
+        _G.__GakuranSharedConfigManager.Notify(
             "Config Error",
             "Config runtime failed: "
                 .. tostring(returned)
@@ -3150,31 +3272,323 @@ function GakuranSharedConfig.LoadFile()
     local config =
         type(returned) == "table"
         and returned
-        or rawget(
-            _G,
-            "GAKURAN_SHARED_CONFIG"
-        )
+        or legacy
 
-    return GakuranSharedConfig.Apply(
+    return _G.__GakuranSharedConfigManager.Apply(
         config,
-        GAKURAN_SHARED_CONFIG_FILE
+        sourceName
     )
 end
 
-function GakuranSharedConfig.ResetBasic()
-    GakuranSharedConfig.CaptureBasic()
+function _G.__GakuranSharedConfigManager.LoadNamed(configName)
+    configName =
+        tostring(
+            configName
+            or _G.__GakuranSharedConfigManager.Selected
+            or "Basic"
+        )
 
-    return GakuranSharedConfig.Apply(
+    if configName == "Basic" then
+        _G.__GakuranSharedConfigManager.Selected =
+            "Basic"
+
+        if _G.__GakuranSharedConfigManager.Dropdown
+            and _G.__GakuranSharedConfigManager.Dropdown.Set then
+
+            pcall(function()
+                _G.__GakuranSharedConfigManager.Dropdown:Set(
+                    {"Basic"}
+                )
+            end)
+        end
+
+        return _G.__GakuranSharedConfigManager.ResetBasic()
+    end
+
+    if type(readfile) ~= "function"
+        or type(isfile) ~= "function" then
+
+        _G.__GakuranSharedConfigManager.Notify(
+            "Config Error",
+            "readfile/isfile unavailable."
+        )
+        return false
+    end
+
+    local path =
+        _G.__GakuranSharedConfigManager.PathForName(
+            configName
+        )
+
+    local existsOk, exists =
+        pcall(
+            isfile,
+            path
+        )
+
+    if not existsOk
+        or not exists then
+
+        _G.__GakuranSharedConfigManager.Notify(
+            "Config Error",
+            "Config file not found: "
+                .. tostring(configName)
+        )
+        return false
+    end
+
+    local readOk, source =
+        pcall(
+            readfile,
+            path
+        )
+
+    if not readOk then
+        _G.__GakuranSharedConfigManager.Notify(
+            "Config Error",
+            "Could not read "
+                .. tostring(configName)
+        )
+        return false
+    end
+
+    local loaded =
+        _G.__GakuranSharedConfigManager.LoadSource(
+            source,
+            configName
+        )
+
+    if loaded then
+        _G.__GakuranSharedConfigManager.Selected =
+            configName
+    end
+
+    return loaded
+end
+
+function _G.__GakuranSharedConfigManager.RefreshDropdown()
+    local dropdown =
+        _G.__GakuranSharedConfigManager.Dropdown
+
+    if dropdown then
+        if dropdown.Refresh then
+            pcall(function()
+                dropdown:Refresh()
+            end)
+        elseif dropdown.UpdateChoices then
+            pcall(function()
+                dropdown:UpdateChoices(
+                    _G.__GakuranSharedConfigManager.ScanConfigNames()
+                )
+            end)
+        end
+    end
+
+    return _G.__GakuranSharedConfigManager.ScanConfigNames()
+end
+
+function _G.__GakuranSharedConfigManager.SaveNamed(configName)
+    if type(writefile) ~= "function" then
+        _G.__GakuranSharedConfigManager.Notify(
+            "Config Error",
+            "writefile unavailable."
+        )
+        return false
+    end
+
+    if not _G.__GakuranSharedConfigManager.EnsureFolder() then
+        _G.__GakuranSharedConfigManager.Notify(
+            "Config Error",
+            "Could not create GakuranConfigs folder."
+        )
+        return false
+    end
+
+    local safeName =
+        _G.__GakuranSharedConfigManager.SanitizeName(
+            configName
+            or _G.__GakuranSharedConfigManager.PendingName
+            or "Custom"
+        )
+
+    local path =
+        _G.__GakuranSharedConfigManager.PathForName(
+            safeName
+        )
+
+    local source =
+        _G.__GakuranSharedConfigManager.SerializeCurrent(
+            safeName
+        )
+
+    local ok =
+        pcall(
+            writefile,
+            path,
+            source
+        )
+
+    if not ok then
+        _G.__GakuranSharedConfigManager.Notify(
+            "Config Error",
+            "Could not save "
+                .. tostring(safeName)
+        )
+        return false
+    end
+
+    _G.__GakuranSharedConfigManager.Selected =
+        safeName
+
+    _G.__GakuranSharedConfigManager.PendingName =
+        safeName
+
+    _G.__GakuranSharedConfigManager.RefreshDropdown()
+
+    if _G.__GakuranSharedConfigManager.Dropdown
+        and _G.__GakuranSharedConfigManager.Dropdown.Set then
+
+        pcall(function()
+            _G.__GakuranSharedConfigManager.Dropdown:Set(
+                {safeName}
+            )
+        end)
+    end
+
+    _G.__GakuranSharedConfigManager.Notify(
+        "Timing Config",
+        "Saved "
+            .. safeName
+            .. " to GakuranConfigs/"
+    )
+
+    return true
+end
+
+function _G.__GakuranSharedConfigManager.CopyCurrent(configName)
+    if type(setclipboard) ~= "function" then
+        _G.__GakuranSharedConfigManager.Notify(
+            "Config Error",
+            "setclipboard unavailable."
+        )
+        return false
+    end
+
+    local safeName =
+        _G.__GakuranSharedConfigManager.SanitizeName(
+            configName
+            or _G.__GakuranSharedConfigManager.PendingName
+            or "Custom"
+        )
+
+    local source =
+        _G.__GakuranSharedConfigManager.SerializeCurrent(
+            safeName
+        )
+
+    local ok =
+        pcall(
+            setclipboard,
+            source
+        )
+
+    if ok then
+        _G.__GakuranSharedConfigManager.Notify(
+            "Timing Config",
+            "Copied "
+                .. safeName
+                .. " config."
+        )
+    end
+
+    return ok
+end
+
+function _G.__GakuranSharedConfigManager.DeleteNamed(configName)
+    configName =
+        tostring(
+            configName
+            or _G.__GakuranSharedConfigManager.Selected
+            or "Basic"
+        )
+
+    if configName == "Basic" then
+        _G.__GakuranSharedConfigManager.Notify(
+            "Timing Config",
+            "Basic cannot be deleted."
+        )
+        return false
+    end
+
+    if type(delfile) ~= "function" then
+        _G.__GakuranSharedConfigManager.Notify(
+            "Config Error",
+            "delfile unavailable."
+        )
+        return false
+    end
+
+    local path =
+        _G.__GakuranSharedConfigManager.PathForName(
+            configName
+        )
+
+    local ok =
+        pcall(
+            delfile,
+            path
+        )
+
+    if not ok then
+        _G.__GakuranSharedConfigManager.Notify(
+            "Config Error",
+            "Could not delete "
+                .. configName
+        )
+        return false
+    end
+
+    _G.__GakuranSharedConfigManager.Selected =
+        "Basic"
+
+    _G.__GakuranSharedConfigManager.RefreshDropdown()
+
+    if _G.__GakuranSharedConfigManager.Dropdown
+        and _G.__GakuranSharedConfigManager.Dropdown.Set then
+
+        pcall(function()
+            _G.__GakuranSharedConfigManager.Dropdown:Set(
+                {"Basic"}
+            )
+        end)
+    end
+
+    _G.__GakuranSharedConfigManager.Notify(
+        "Timing Config",
+        "Deleted "
+            .. configName
+    )
+
+    return true
+end
+
+function _G.__GakuranSharedConfigManager.ResetBasic()
+    _G.__GakuranSharedConfigManager.CaptureBasic()
+
+    _G.__GakuranSharedConfigManager.Selected =
+        "Basic"
+
+    return _G.__GakuranSharedConfigManager.Apply(
         {
             Name = "Basic",
             Timings =
-                GakuranSharedConfig.BasicTimings,
+                _G.__GakuranSharedConfigManager.BasicTimings,
         },
         "Basic"
     )
 end
 
-function GakuranSharedConfig.AutoLoad()
+function _G.__GakuranSharedConfigManager.AutoLoad()
     local shared =
         rawget(
             _G,
@@ -3182,19 +3596,28 @@ function GakuranSharedConfig.AutoLoad()
         )
 
     if type(shared) == "table" then
-        GakuranSharedConfig.Apply(
+        _G.__GakuranSharedConfigManager.Apply(
             shared,
             shared.Name or "loader config"
         )
     end
-end
 
-_G.__GakuranSharedConfigManager =
-    GakuranSharedConfig
+    local requested =
+        rawget(
+            _G,
+            "GAKURAN_CONFIG_NAME"
+        )
+
+    if requested ~= nil then
+        _G.__GakuranSharedConfigManager.LoadNamed(
+            requested
+        )
+    end
+end
 
 -- 5. Files Section
 local function CreateFilesSection()
-]==]_x=_o(_x,_la,_ma)if not _x then print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,115,116,97,114,116,117,112,32,102,97,105,108,101,100,58,32)..string.char(115,104,97,114,101,100,32,99,111,110,102,105,103,32,104,101,108,112,101,114,32,109,97,114,107,101,114,32,99,104,97,110,103,101,100))return end local _na=[[    Files_Section:Button("Save Configuration", function()
+]==]_x=_o(_x,_la,_ma)if not _x then print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,115,116,97,114,116,117,112,32,102,97,105,108,101,100,58,32)..string.char(99,111,110,102,105,103,32,102,111,108,100,101,114,32,104,101,108,112,101,114,32,109,97,114,107,101,114,32,99,104,97,110,103,101,100))return end local _na=[[    Files_Section:Button("Save Configuration", function()
         UI_Library:SaveConfig(GameName)
         UI_Library:Notify("Success", "Saved configuration")
     end)
@@ -3203,37 +3626,106 @@ end]]local _oa=[==[    Files_Section:Button("Save Configuration", function()
         UI_Library:Notify("Success", "Saved configuration")
     end)
 
-    Files_Section:Divider("Shareable Timing Config")
+    Files_Section:Divider("Timing Configs")
+
+    _G.__GakuranSharedConfigManager.NameBox =
+        Files_Section:Textbox(
+            "Config Name",
+            "MyConfig",
+            function(value)
+                _G.__GakuranSharedConfigManager.PendingName =
+                    tostring(value or "MyConfig")
+            end
+        )
+
+    _G.__GakuranSharedConfigManager.Dropdown =
+        Files_Section:Dropdown(
+            "Config",
+            {"Basic"},
+            function()
+                return _G.__GakuranSharedConfigManager.ScanConfigNames()
+            end,
+            false,
+            function(list)
+                _G.__GakuranSharedConfigManager.Selected =
+                    list and list[1] or "Basic"
+            end,
+            "Reads .lua files from GakuranConfigs",
+            true
+        )
 
     Files_Section:Button(
-        "Export Timing Config",
+        "Load Selected",
         function()
-            GakuranSharedConfig.Export()
+            _G.__GakuranSharedConfigManager.LoadNamed(
+                _G.__GakuranSharedConfigManager.Selected
+            )
         end
     )
 
     Files_Section:Button(
-        "Load Shared Config",
+        "Save Current",
         function()
-            GakuranSharedConfig.LoadFile()
+            _G.__GakuranSharedConfigManager.SaveNamed(
+                _G.__GakuranSharedConfigManager.NameBox
+                and _G.__GakuranSharedConfigManager.NameBox:Get()
+                or _G.__GakuranSharedConfigManager.PendingName
+            )
+        end
+    )
+
+    Files_Section:Button(
+        "Refresh Config List",
+        function()
+            _G.__GakuranSharedConfigManager.RefreshDropdown()
+        end
+    )
+
+    Files_Section:Button(
+        "Copy Current Config",
+        function()
+            _G.__GakuranSharedConfigManager.CopyCurrent(
+                _G.__GakuranSharedConfigManager.NameBox
+                and _G.__GakuranSharedConfigManager.NameBox:Get()
+                or _G.__GakuranSharedConfigManager.PendingName
+            )
+        end
+    )
+
+    Files_Section:Button(
+        "Delete Selected",
+        function()
+            _G.__GakuranSharedConfigManager.DeleteNamed(
+                _G.__GakuranSharedConfigManager.Selected
+            )
         end
     )
 
     Files_Section:Button(
         "Reset Basic Timings",
         function()
-            GakuranSharedConfig.ResetBasic()
+            _G.__GakuranSharedConfigManager.ResetBasic()
+
+            if _G.__GakuranSharedConfigManager.Dropdown
+                and _G.__GakuranSharedConfigManager.Dropdown.Set then
+
+                _G.__GakuranSharedConfigManager.Dropdown:Set(
+                    {"Basic"}
+                )
+            end
         end
     )
 
     Files_Section:Label(
-        "Share gakuran_shared_config.lua or paste the config above the loader."
+        "Folder: GakuranConfigs | Drop shared .lua configs there, then Refresh."
     )
-end]==]_x=_o(_x,_na,_oa)if not _x then print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,115,116,97,114,116,117,112,32,102,97,105,108,101,100,58,32)..string.char(115,104,97,114,101,100,32,99,111,110,102,105,103,32,98,117,116,116,111,110,115,32,109,97,114,107,101,114,32,99,104,97,110,103,101,100))return end local _pa=[[InitializeUI()
+end]==]_x=_o(_x,_na,_oa)if not _x then print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,115,116,97,114,116,117,112,32,102,97,105,108,101,100,58,32)..string.char(99,111,110,102,105,103,32,100,114,111,112,100,111,119,110,47,98,117,116,116,111,110,115,32,109,97,114,107,101,114,32,99,104,97,110,103,101,100))return end local _pa=[[InitializeUI()
 
 UpdateClipboardSection()]]local _qa=[[InitializeUI()
 
-GakuranSharedConfig.CaptureBasic()
-GakuranSharedConfig.AutoLoad()
+_G.__GakuranSharedConfigManager.CaptureBasic()
+_G.__GakuranSharedConfigManager.EnsureFolder()
+_G.__GakuranSharedConfigManager.RefreshDropdown()
+_G.__GakuranSharedConfigManager.AutoLoad()
 
-UpdateClipboardSection()]]_x=_o(_x,_pa,_qa)if not _x then print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,115,116,97,114,116,117,112,32,102,97,105,108,101,100,58,32)..string.char(115,104,97,114,101,100,32,99,111,110,102,105,103,32,105,110,105,116,32,109,97,114,107,101,114,32,99,104,97,110,103,101,100))return end print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,115,104,97,114,101,97,98,108,101,32,116,105,109,105,110,103,32,99,111,110,102,105,103,115,32,112,97,116,99,104,101,100))end local _ra=_x local _sa,_ta=loadstring(_ra)if not _sa then print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,99,111,109,112,105,108,101,32,102,97,105,108,101,100,58,32)..tostring(_ta))return end if rawget(_G,string.char(95,95,71,97,107,117,114,97,110,67,111,109,98,105,110,101,100,67,111,109,112,105,108,101,79,110,108,121))==true then print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,99,111,109,112,105,108,101,32,99,104,101,99,107,32,112,97,115,115,101,100))return end local _ua=rawget(_G,_c)if type(_ua)==string.char(116,97,98,108,101)and _ua.jobId==game.JobId then print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,97,108,114,101,97,100,121,32,108,111,97,100,101,100,32,105,110,32,116,104,105,115,32,77,97,116,99,104,97,32,115,101,115,115,105,111,110,59,32)..string.char(114,101,115,116,97,114,116,32,77,97,116,99,104,97,32,98,101,102,111,114,101,32,108,111,97,100,105,110,103,32,97,110,111,116,104,101,114,32,71,97,107,117,114,97,110,32,98,117,105,108,100))return end _G[_c]={jobId=game.JobId,version=string.char(118,55,46,50,46,52,45,112,117,98,108,105,99,45,115,104,97,114,101,97,98,108,101,45,99,111,110,102,105,103,115,45,115,116,114,105,107,101,114,45,99,117,114,118,101,45,119,105,110,103,99,104,117,110,45,114,101,118,101,114,116,45,115,110,97,112,45,104,111,116,107,101,121,45,99,97,112,111,101,105,114,97,45,104,101,97,118,121,102,105,120),}local _va,_wa=pcall(_sa)if not _va then _G[_c]=nil print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,114,117,110,116,105,109,101,32,102,97,105,108,101,100,58,32)..tostring(_wa))return end print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,108,111,97,100,101,100,32,118,55,46,50,46,52,32,112,117,98,108,105,99,32,43,32,115,104,97,114,101,97,98,108,101,32,116,105,109,105,110,103,32,99,111,110,102,105,103,115))
+UpdateClipboardSection()]]_x=_o(_x,_pa,_qa)if not _x then print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,115,116,97,114,116,117,112,32,102,97,105,108,101,100,58,32)..string.char(99,111,110,102,105,103,32,105,110,105,116,32,109,97,114,107,101,114,32,99,104,97,110,103,101,100))return end print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,99,111,110,102,105,103,32,102,111,108,100,101,114,47,100,114,111,112,100,111,119,110,32,112,97,116,99,104,101,100,32,40,108,111,119,45,114,101,103,105,115,116,101,114,41))end local _ra=_x local _sa,_ta=loadstring(_ra)if not _sa then print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,99,111,109,112,105,108,101,32,102,97,105,108,101,100,58,32)..tostring(_ta))return end if rawget(_G,string.char(95,95,71,97,107,117,114,97,110,67,111,109,98,105,110,101,100,67,111,109,112,105,108,101,79,110,108,121))==true then print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,99,111,109,112,105,108,101,32,99,104,101,99,107,32,112,97,115,115,101,100))return end local _ua=rawget(_G,_c)if type(_ua)==string.char(116,97,98,108,101)and _ua.jobId==game.JobId then print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,97,108,114,101,97,100,121,32,108,111,97,100,101,100,32,105,110,32,116,104,105,115,32,77,97,116,99,104,97,32,115,101,115,115,105,111,110,59,32)..string.char(114,101,115,116,97,114,116,32,77,97,116,99,104,97,32,98,101,102,111,114,101,32,108,111,97,100,105,110,103,32,97,110,111,116,104,101,114,32,71,97,107,117,114,97,110,32,98,117,105,108,100))return end _G[_c]={jobId=game.JobId,version=string.char(118,55,46,50,46,52,45,112,117,98,108,105,99,45,99,111,110,102,105,103,45,102,111,108,100,101,114,45,100,114,111,112,100,111,119,110,45,108,111,119,114,101,103,45,115,116,114,105,107,101,114,45,99,117,114,118,101,45,119,105,110,103,99,104,117,110,45,114,101,118,101,114,116,45,115,110,97,112,45,104,111,116,107,101,121,45,99,97,112,111,101,105,114,97,45,104,101,97,118,121,102,105,120),}local _va,_wa=pcall(_sa)if not _va then _G[_c]=nil print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,114,117,110,116,105,109,101,32,102,97,105,108,101,100,58,32)..tostring(_wa))return end print(string.char(91,71,97,107,117,114,97,110,32,65,80,32,83,104,97,114,101,93,32,108,111,97,100,101,100,32,118,55,46,50,46,52,32,112,117,98,108,105,99,32,43,32,99,111,110,102,105,103,32,102,111,108,100,101,114,47,100,114,111,112,100,111,119,110))
